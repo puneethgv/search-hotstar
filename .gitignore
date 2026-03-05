@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*.pyc
+qdrant_storage/
+data/*.csv
+data/hotstar_*.json
+*.ipynb_checkpoints
