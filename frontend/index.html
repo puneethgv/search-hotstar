@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Search-Hotstar</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Search-Hotstar</h1>
+      <p class="subtitle">Semantic search over your movie catalog</p>
+
+      <section class="search-panel">
+        <label for="backendUrl">Backend URL</label>
+        <input id="backendUrl" type="text" value="http://127.0.0.1:8010" />
+
+        <label for="queryInput">Search</label>
+        <input
+          id="queryInput"
+          type="text"
+          placeholder="e.g. telugu movies captain america latest"
+        />
+
+        <div class="row">
+          <div>
+            <label for="kInput">K results</label>
+            <input id="kInput" type="number" min="1" max="20" value="5" />
+          </div>
+          <button id="searchBtn">Search</button>
+        </div>
+      </section>
+
+      <section id="status" class="status"></section>
+      <section id="results" class="results"></section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

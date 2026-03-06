@@ -13,7 +13,8 @@ import numpy as np
 from dotenv import load_dotenv
 from huggingface_hub import InferenceClient
 
-load_dotenv()
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(dotenv_path=PROJECT_ROOT / ".env")
 
 LOGGER = logging.getLogger("hotstar_embedder")
 
@@ -264,8 +265,8 @@ def run_pipeline(
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Generate embeddings for Hotstar catalog JSON")
-    parser.add_argument("--input", type=str, default="data/hotstar_scraped.json")
-    parser.add_argument("--output", type=str, default="data/hotstar_embedded.json")
+    parser.add_argument("--input", type=str, default=str(PROJECT_ROOT / "data" / "hotstar_scraped.json"))
+    parser.add_argument("--output", type=str, default=str(PROJECT_ROOT / "data" / "hotstar_embedded.json"))
     parser.add_argument("--backend", choices=["hf-inference", "local"], default="hf-inference")
     parser.add_argument("--hf-model", type=str, default="BAAI/bge-m3")
     parser.add_argument("--batch-size", type=int, default=32)

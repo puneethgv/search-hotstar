@@ -19,7 +19,8 @@ from bs4.element import Tag
 from dotenv import load_dotenv
 from xml.etree import ElementTree
 
-load_dotenv()
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(dotenv_path=PROJECT_ROOT / ".env")
 
 LOGGER = logging.getLogger("hotstar_scraper")
 
@@ -619,7 +620,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="Sitemap URL. Repeat for multiple values.",
     )
-    parser.add_argument("--output", type=str, default="data/hotstar_scraped.json")
+    parser.add_argument("--output", type=str, default=str(PROJECT_ROOT / "data" / "hotstar_scraped.json"))
     parser.add_argument("--concurrency", type=int, default=20)
     parser.add_argument(
         "--discover-latest",

@@ -2,21 +2,26 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
+from difflib import SequenceMatcher
+from pathlib import Path
 from threading import Lock
 from typing import Any
 
 import numpy as np
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qdrant_models
 from dotenv import load_dotenv
 from huggingface_hub import InferenceClient
 
-load_dotenv()
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(dotenv_path=PROJECT_ROOT / ".env")
 
 LOGGER = logging.getLogger("hotstar_api")
 
@@ -49,6 +54,7 @@ class SearchHit(BaseModel):
 
 class SearchResponse(BaseModel):
     query: str
+    k: int
     top_k: int
     search_ms: float
     results: list[SearchHit]
@@ -127,15 +133,32 @@ class HuggingFaceQueryEmbedder:
         raise RuntimeError("Embedding retry loop exited unexpectedly")
 
 
-app = FastAPI(title="Hotstar Semantic Search API", version="1.0.0")
+app = FastAPI(title="Search-Hotstar API", version="1.0.0")
 config = AppConfig()
 query_cache = QueryEmbeddingCache(max_size=config.max_cache_size)
+
+frontend_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "FRONTEND_ORIGINS",
+        "http://127.0.0.1:5500,http://localhost:5500,http://127.0.0.1:5173,http://localhost:5173",
+    ).split(",")
+    if origin.strip()
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=frontend_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.on_event("startup")
 def startup_event() -> None:
     configure_logging()
-    LOGGER.info("Starting Hotstar Semantic Search API")
+    LOGGER.info("Starting Search-Hotstar API")
 
     app.state.qdrant = QdrantClient(url=config.qdrant_url)
     app.state.embedder = HuggingFaceQueryEmbedder(api_key=config.hf_token, model_name=config.hf_model)
@@ -151,6 +174,19 @@ def startup_event() -> None:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/")
+def root() -> dict[str, Any]:
+    return {
+        "service": "Search-Hotstar API",
+        "status": "ok",
+        "endpoints": {
+            "health": "/health",
+            "search": "/search?q=telugu+movies&k=5",
+            "docs": "/docs",
+        },
+    }
 
 
 def _build_search_hits(points: list[Any]) -> list[SearchHit]:
@@ -179,10 +215,63 @@ def _build_search_hits(points: list[Any]) -> list[SearchHit]:
     return hits
 
 
+def _compact_text(value: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", value.lower())
+
+
+def _lexical_boost(query: str, payload: dict[str, Any], vector_score: float) -> float:
+    query_text = query.strip().lower()
+    query_compact = _compact_text(query_text)
+    if not query_compact:
+        return vector_score
+
+    title = str(payload.get("title") or "")
+    description = str(payload.get("description") or "")
+    genre = str(payload.get("genre") or "")
+    cast = [str(item) for item in (payload.get("cast") or [])]
+    keywords = [str(item) for item in (payload.get("keywords") or [])]
+
+    searchable_parts = [title, description, genre, *cast, *keywords]
+    searchable_text = " ".join(searchable_parts).lower()
+    searchable_compact = _compact_text(searchable_text)
+
+    boost = 0.0
+
+    if query_compact and query_compact in searchable_compact:
+        boost += 0.35
+
+    query_tokens = [token for token in re.findall(r"[a-z0-9]+", query_text) if len(token) > 1]
+    if query_tokens:
+        token_hits = sum(1 for token in query_tokens if token in searchable_text)
+        boost += min(0.2, token_hits * 0.06)
+
+    phrase_candidates = [title, *cast, *keywords]
+    max_ratio = 0.0
+    for phrase in phrase_candidates:
+        compact_phrase = _compact_text(phrase)
+        if not compact_phrase:
+            continue
+        ratio = SequenceMatcher(None, query_compact, compact_phrase).ratio()
+        if ratio > max_ratio:
+            max_ratio = ratio
+
+    has_query_whitespace = len(query_text.split()) > 1
+
+    if max_ratio >= 0.9:
+        boost += 0.3
+    elif max_ratio >= 0.8 and (token_hits > 0 or has_query_whitespace):
+        boost += 0.18
+    elif max_ratio >= 0.7 and token_hits > 0:
+        boost += 0.08
+
+    return vector_score + boost
+
+
 @app.get("/search", response_model=SearchResponse)
 def search(
-    q: str = Query(..., min_length=2, description="Search query text"),
-    top_k: int = Query(default=5, ge=1, le=20),
+    q: str = Query(..., min_length=1, description="Search query text"),
+    k: int | None = Query(default=None, ge=1, le=100, description="Number of results to return"),
+    top_k: int | None = Query(default=None, ge=1, le=100, description="Deprecated alias for k"),
     year: int | None = Query(default=None, ge=1900, le=2100, description="Optional release year filter"),
     language: str | None = Query(default=None, description="Optional language code filter (e.g., en, hi, ta)"),
 ) -> SearchResponse:
@@ -192,6 +281,13 @@ def search(
     query = q.strip()
     if not query:
         raise HTTPException(status_code=400, detail="Query cannot be empty")
+
+    if k is not None and top_k is not None and k != top_k:
+        raise HTTPException(status_code=400, detail="Provide either k or top_k, or set both to same value")
+
+    effective_k = k if k is not None else top_k
+    if effective_k is None:
+        effective_k = 5
 
     query_vector = query_cache.get(query)
     if query_vector is None:
@@ -221,13 +317,37 @@ def search(
             )
 
         query_filter = qdrant_models.Filter(must=conditions) if conditions else None
-        points = qdrant.search(
-            collection_name=config.collection_name,
-            query_vector=query_vector,
-            limit=top_k,
-            with_payload=True,
-            query_filter=query_filter,
+        candidate_limit = min(max(effective_k * 5, 25), 100)
+
+        if hasattr(qdrant, "search"):
+            points = qdrant.search(
+                collection_name=config.collection_name,
+                query_vector=query_vector,
+                limit=candidate_limit,
+                with_payload=True,
+                query_filter=query_filter,
+            )
+        else:
+            response = qdrant.query_points(
+                collection_name=config.collection_name,
+                query=query_vector,
+                limit=candidate_limit,
+                with_payload=True,
+                query_filter=query_filter,
+            )
+            points = response.points
+
+        ranked_points = sorted(
+            points,
+            key=lambda point: _lexical_boost(
+                query,
+                point.payload or {},
+                float(point.score),
+            ),
+            reverse=True,
         )
+        points = ranked_points[:effective_k]
+
         elapsed_ms = (time.perf_counter() - start) * 1000.0
     except Exception as exc:
         LOGGER.exception("Qdrant search failed: %s", exc)
@@ -235,7 +355,8 @@ def search(
 
     return SearchResponse(
         query=query,
-        top_k=top_k,
+        k=effective_k,
+        top_k=effective_k,
         search_ms=round(elapsed_ms, 3),
         results=_build_search_hits(points),
     )

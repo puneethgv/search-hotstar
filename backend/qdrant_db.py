@@ -11,6 +11,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models
 
 LOGGER = logging.getLogger("hotstar_qdrant")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def configure_logging(verbose: bool = False) -> None:
@@ -121,7 +122,7 @@ def ingest_embeddings(
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Ingest embedded Hotstar records into Qdrant")
-    parser.add_argument("--input", type=str, default="data/hotstar_embedded.json")
+    parser.add_argument("--input", type=str, default=str(PROJECT_ROOT / "data" / "hotstar_embedded.json"))
     parser.add_argument("--qdrant-url", type=str, default="http://localhost:6333")
     parser.add_argument("--collection", type=str, default="hotstar_catalog")
     parser.add_argument("--batch-size", type=int, default=256)

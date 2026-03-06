@@ -13,6 +13,7 @@ from typing import Any
 import pandas as pd
 
 LOGGER = logging.getLogger("hotstar_enricher")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 LANG_NAME_TO_CODE: dict[str, str] = {
     "english": "en",
@@ -396,12 +397,12 @@ def run(args: argparse.Namespace) -> None:
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Enrich scraped Hotstar data using public movie metadata CSVs")
-    parser.add_argument("--input", type=str, default="data/hotstar_scraped_test_1000.json")
-    parser.add_argument("--output", type=str, default="data/hotstar_scraped_test_1000_enriched.json")
-    parser.add_argument("--movies-metadata", type=str, default="data/movies_metadata.csv")
-    parser.add_argument("--credits", type=str, default="data/credits.csv")
-    parser.add_argument("--keywords", type=str, default="data/keywords.csv")
-    parser.add_argument("--quality-output", type=str, default="data/hotstar_quality_5000.json")
+    parser.add_argument("--input", type=str, default=str(PROJECT_ROOT / "data" / "hotstar_scraped_test_1000.json"))
+    parser.add_argument("--output", type=str, default=str(PROJECT_ROOT / "data" / "hotstar_scraped_test_1000_enriched.json"))
+    parser.add_argument("--movies-metadata", type=str, default=str(PROJECT_ROOT / "data" / "movies_metadata.csv"))
+    parser.add_argument("--credits", type=str, default=str(PROJECT_ROOT / "data" / "credits.csv"))
+    parser.add_argument("--keywords", type=str, default=str(PROJECT_ROOT / "data" / "keywords.csv"))
+    parser.add_argument("--quality-output", type=str, default=str(PROJECT_ROOT / "data" / "hotstar_quality_5000.json"))
     parser.add_argument("--target-count", type=int, default=5000)
     parser.add_argument("--verbose", action="store_true")
     return parser

@@ -1,4 +1,4 @@
-# Searchstar
+# Search-Hotstar
 
 Semantic movie search over a Hotstar-style catalog using FastAPI + Qdrant + text embeddings.
 
